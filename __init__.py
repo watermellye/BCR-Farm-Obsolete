@@ -382,16 +382,14 @@ async def on_farm_schedule(*args):
     donate = {}
     for i, account in enumerate(acinfo["accounts"]):
         try:
-            donate[i] = len(account["today_donate"])
+            donate[i] = account["today_donate"]
         except:
             donate[i] = 0
     donate = list(sorted(donate.items(), key=lambda x: x[1]))
     ff = False
     for account in donate:
-        #if account[0] != 17:
-        #    continue
         if account[1] >= 10:
-            break
+            continue
         res = await query("get_donate_list", account[0])
         #返回 clan_chat_message / users / equip_requests装备请求 / user_equip_data我的装备数量 / 其它（cooperation_data等）
         user = {}
@@ -413,7 +411,7 @@ async def on_farm_schedule(*args):
                         if binds[str(equip['viewer_id'])]["donate_remind"] == False or binds[str(equip['viewer_id'])]["donate_last"] > 8 * 3600:
                             await bot.send_private_msg(user_id=int(binds[str(equip['viewer_id'])]["qqid"]), message=f"检测到 {user[equip['viewer_id']]} 的装备请求\n装备id={equip['equip_id']}")
                             binds[str(equip['viewer_id'])]["donate_last"] = nowtime()
-                            binds[str(equip['viewer_id'])]["donate_remind"] == True
+                            binds[str(equip['viewer_id'])]["donate_remind"] = True
                             binds[str(equip['viewer_id'])]["donate_clock"] = 0
                         binds[str(equip['viewer_id'])]["donate_num"] = 0
                         binds[str(equip['viewer_id'])]["donate_bot"] = []
