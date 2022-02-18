@@ -58,6 +58,12 @@ captcha_lck = Lock()
 with open(join(curpath, 'account.json')) as fp:
     acinfo = load(fp)
 
+with open(join(curpath, 'equip_name.json'), "r", encoding="utf-8") as fp:
+    equip2name = load(fp)
+
+with open(join(curpath, 'equip_list.json')) as fp:
+    equip2list = load(fp)
+
 
 def save_acinfo():
     global acinfo
@@ -177,7 +183,7 @@ def nowtime():
 
 
 async def get_equip(client, quest_id, current_currency_num, current_stamina_num, current_ticket_num):
-    if current_currency_num <= 20 and current_stamina_num >= 1000:
+    if current_stamina_num <= 60 and current_currency_num >= 1000:
         try:
             res = await client.callapi('/shop/recover_stamina', {"current_currency_num": current_currency_num})
             if "server_error" in res:
@@ -330,6 +336,10 @@ async def query(info: str, account=-1, **args):
             item_list[item["id"]] = item["stock"]
         current_ticket = item_list[23001]
 
+        user_equip = {}
+        for item in load_index["user_equip"]:
+            user_equip[item["id"]] = item["stock"]
+
         if info == "profile":
             return (await profile(client, args["pcrid"]))['user_info']
         if info == "invite":
@@ -347,15 +357,39 @@ async def query(info: str, account=-1, **args):
         if info == "get_donate_list":
             return await get_donate_list(client, clan_id)
         if info == "donate":
-            return await donate(client, clan_id, args["message_id"], args["donation_num"], args["current_equip_num"])
+            if "equip_id" in args:
+                equip_id = int(args["equip_id"])
+                return await donate(client, clan_id, args["message_id"], args["donation_num"], user_equip[equip_id])
+            elif "current_equip_num" in args:
+                return await donate(client, clan_id, args["message_id"], args["donation_num"], args["current_equip_num"])
+            return False
         if info == "get_equip":
             equip_id = args["equip_id"]
             if type(equip_id) == str:
-                return await get_equip(client, equip_id, current_jewel, current_stamina, current_ticket)
-            elif equip_id == 114613:  # 贤者宝珠 14-12
-                return await get_equip(client, "14-12", current_jewel, current_stamina, current_ticket)
+                quest_id = equip_id.split('-')
+                quest_id = int(f"11{int(quest_id[0]):03d}{int(quest_id[1]):03d}")
+                for i in home_index["quest_list"]:
+                    if i["quest_id"] == quest_id:
+                        if i["clear_flg"] == 3:
+                            return await get_equip(client, equip_id, current_jewel, current_stamina, current_ticket)
+                        else:
+                            return f"关卡{equip_id}为{i['clear_flg']}星通关，无法扫荡。"
+                return f"该农场号未解锁关卡{equip_id}"
+            elif str(equip_id) in equip2list:
+                equip_map_list = equip2list[str(equip_id)]
+                msg = f"包含{equip_id}的图有：" + " ".join(equip_map_list)
+                for equip_map in equip_map_list:
+                    msg += f"\n尝试自动刷取{equip_map}："
+                    res = await query("get_equip", account, equip_id=equip_map)
+                    if res == True:
+                        return True
+                    if type(res) == str:
+                        msg += f"Failed {res}"
+                    else:
+                        msg += "Failed"
+                return msg
             else:
-                return None
+                return "未找到该装备"
 
 
 ff_last = False
@@ -387,6 +421,7 @@ async def on_farm_schedule(*args):
             donate[i] = 0
     donate = list(sorted(donate.items(), key=lambda x: x[1]))
     ff = False
+    f_low_equip_remind = []
     for account in donate:
         if account[1] >= 10:
             continue
@@ -405,11 +440,12 @@ async def on_farm_schedule(*args):
             if "history" in equip:
                 continue  # 不响应自己的捐赠
             if equip["donation_num"] < equip["request_num"]:  # 还没捐满
+                equip_name = equip2name[str(100000 + int(equip['equip_id']) % 10000)]
                 ff = True
                 if str(equip['viewer_id']) in binds:
                     if equip["donation_num"] == 0:
                         if binds[str(equip['viewer_id'])]["donate_remind"] == False or binds[str(equip['viewer_id'])]["donate_last"] > 8 * 3600:
-                            await bot.send_private_msg(user_id=int(binds[str(equip['viewer_id'])]["qqid"]), message=f"检测到 {user[equip['viewer_id']]} 的装备请求\n装备id={equip['equip_id']}")
+                            await bot.send_private_msg(user_id=int(binds[str(equip['viewer_id'])]["qqid"]), message=f"检测到 {user[equip['viewer_id']]} 的装备请求：{equip_name}({equip['equip_id']})")
                             binds[str(equip['viewer_id'])]["donate_last"] = nowtime()
                             binds[str(equip['viewer_id'])]["donate_remind"] = True
                             binds[str(equip['viewer_id'])]["donate_clock"] = 0
@@ -417,18 +453,36 @@ async def on_farm_schedule(*args):
                         binds[str(equip['viewer_id'])]["donate_bot"] = []
                         save_binds()
 
+                #print(equip["equip_id"] in user_equip_data)
+                #print(user_equip_data[equip["equip_id"]])
+                #if user_equip_data[equip["equip_id"]] < 3000:  # 测试用
                 if user_equip_data[equip["equip_id"]] < 30:  # 该装备已较少
-                    msg = f"{acinfo['accounts'][account[0]]['name']}的装备{equip['equip_id']}存量较少，剩余{user_equip_data[equip['equip_id']]}。"
-                    res = await query("get_equip", account[0], equip_id=equip['equip_id'])
-                    if res != True:
-                        msg += f"请发送[农场刷图 {account[0]} <要刷的图>]指定bot刷图"
-                    if type(res) == str:
-                        await bot.send_private_msg(user_id=acinfo["admin"], message=f"{acinfo['accounts'][account[0]]['name']}自动刷取装备{equip['equip_id']}时发生错误：{res}")
+                    msg = f"{acinfo['accounts'][account[0]]['name']}的装备{equip_name}({equip['equip_id']})存量较少，剩余{user_equip_data[equip['equip_id']]}。"
+                    equip_map_list = equip2list[str(equip['equip_id'])]
+                    if equip["equip_id"] not in f_low_equip_remind:
+                        f_low_equip_remind.append(equip["equip_id"])
+                        msg += "\n包含该装备的图有：" + " ".join(equip_map_list)
+                    f_getequip = False
+                    for equip_map in equip_map_list:
+                        msg += f"\n尝试自动刷取{equip_map}："
+                        res = await query("get_equip", account[0], equip_id=equip_map)
+                        if res == True:
+                            f_getequip = True
+                            msg += "Succeed"
+                            break
+                        if type(res) == str:
+                            msg += f"Failed {res}"
+                        else:
+                            msg += "Failed"
+                    if f_getequip == False:
+                        msg += f"\n请发送[农场刷图 {account[0]} <要刷的图>]指定bot刷图"
+                        print(f"\n请发送[农场刷图 {account[0]} <要刷的图>]指定bot刷图")
                     await bot.send_private_msg(user_id=acinfo["admin"], message=msg)
 
-                donation_num = min(user_equip_data[equip["equip_id"]], 2 - equip["user_donation_num"])
+                donation_num = min(user_equip_data[equip["equip_id"]], 2 - equip["user_donation_num"], equip["request_num"] - equip["donation_num"])
                 if donation_num > 0:
-                    res = await query("donate", account[0], message_id=equip["message_id"], donation_num=donation_num, current_equip_num=user_equip_data[equip["equip_id"]])
+                    # res = await query("donate", account[0], message_id=equip["message_id"], donation_num=donation_num, current_equip_num=user_equip_data[equip["equip_id"]])
+                    res = await query("donate", account[0], message_id=equip["message_id"], donation_num=donation_num, equip_id=equip["equip_id"])
                     if "server_error" not in res:
                         user_equip_data[equip["equip_id"]] -= donation_num
                         acinfo["accounts"][account[0]]["today_donate"] = int(res["donation_num"])
@@ -482,10 +536,11 @@ async def brush(bot, i, equip_id):
     while (flag_over_limit == 1):
         res = await query("get_equip", i, forced_login=True, equip_id=equip_id)
         if type(res) == str:
-            msg += f"\nError: {res}\n可能是未三星通关，请手动刷取。\n{acinfo['accounts'][i]['account']} {acinfo['accounts'][i]['password']}"
+            msg += f"\nFailed: {res}\n{acinfo['accounts'][i]['account']} {acinfo['accounts'][i]['password']}"
             f = False
             break
-        elif res == False:
+        elif res != True:
+            msg += f"\nFailed"
             f = False
             break
         await query("present", i)
