@@ -47,7 +47,7 @@ cache = {}
 lck = Lock()
 
 if exists(config):
-    with open(config) as fp:
+    with open(config, encoding='utf-8') as fp:
         root = load(fp)
 
 binds = root["farm_bind"]  # {"1104356549126": "491673070"}
@@ -55,25 +55,25 @@ quits = root["farm_quit"]
 
 captcha_lck = Lock()
 
-with open(join(curpath, 'account.json')) as fp:
+with open(join(curpath, 'account.json'), encoding='utf-8') as fp:
     acinfo = load(fp)
 
 with open(join(curpath, 'equip_name.json'), "r", encoding="utf-8") as fp:
     equip2name = load(fp)
 
-with open(join(curpath, 'equip_list.json')) as fp:
+with open(join(curpath, 'equip_list.json'), encoding='utf-8') as fp:
     equip2list = load(fp)
 
 
 def save_acinfo():
     global acinfo
-    with open(join(curpath, 'account.json'), 'w') as fp:
+    with open(join(curpath, 'account.json'), 'w', encoding='utf-8') as fp:
         dump(acinfo, fp, indent=4, ensure_ascii=False)
 
 
 def save_binds():
     global root
-    with open(config, 'w') as fp:
+    with open(config, 'w', encoding='utf-8') as fp:
         dump(root, fp, indent=4, ensure_ascii=False)
 
 
@@ -534,7 +534,6 @@ async def on_dayend(*args):  # 每天晚上23点领家园体、任务奖励、�
         await bot.send_private_msg(user_id=acinfo["admin"], message="以下农场号领取家园体、任务奖励、礼物箱出现报错：\n" + "\n".join(msg))
     else:
         await bot.send_private_msg(user_id=acinfo["admin"], message="所有农场号领取家园体、任务奖励、礼物箱成功")
-    
 
 
 async def brush(bot, i, equip_id, ret=0):
