@@ -68,13 +68,13 @@ with open(join(curpath, 'equip_list.json')) as fp:
 def save_acinfo():
     global acinfo
     with open(join(curpath, 'account.json'), 'w') as fp:
-        dump(acinfo, fp, indent=4)
+        dump(acinfo, fp, indent=4, ensure_ascii=False)
 
 
 def save_binds():
     global root
     with open(config, 'w') as fp:
-        dump(root, fp, indent=4)
+        dump(root, fp, indent=4, ensure_ascii=False)
 
 
 f = False
@@ -497,6 +497,8 @@ async def on_farm_schedule(*args):
                             binds[str(equip['viewer_id'])]["donate_num"] = 0
                             binds[str(equip['viewer_id'])]["donate_bot"] = []
                             save_binds()
+                        if int(res["donation_num"]) == 10:
+                            break
                     else:
                         await bot.send_private_msg(user_id=acinfo["admin"], message=f"{acinfo['accounts'][account[0]]['name']}的装备捐赠失败：\n" + str(res))
 
@@ -504,7 +506,7 @@ async def on_farm_schedule(*args):
             break
     global ff_last
     if ff == True and ff_last == False:
-        await bot.send_private_msg(user_id=acinfo["admin"], message=f"存在无法完成的装备请求！请立即阅读以上信息并刷取装备！")
+        await bot.send_private_msg(user_id=acinfo["admin"], message=f"存在无法完成的装备请求，可能是今日bot捐赠额度已用尽。")
     ff_last = ff
 
 
@@ -513,6 +515,7 @@ async def on_farm_schedule(*args):
 async def on_dayend(*args):  # 每天晚上23点领家园体、任务奖励、礼物箱
     global bot
     msg = []
+    retmsg = []
     for i, account in enumerate(acinfo["accounts"]):
         res1 = await query("room", i)
         res2 = await query("mission", i)
@@ -521,14 +524,20 @@ async def on_dayend(*args):  # 每天晚上23点领家园体、任务奖励、�
             pass
         else:
             msg.append(f"{account['name']}\n家园：{res1}\n任务：{res2}\n礼物：{res3}\n")
-        await brush(bot, i, "14-12")
+        retmsg.append(await brush(bot, i, "14-12", 1))
+        if len(retmsg) > 5:
+            await bot.send_private_msg(user_id=acinfo["admin"], message='\n'.join(retmsg))
+            retmsg = []
+    if len(retmsg) > 0:
+        await bot.send_private_msg(user_id=acinfo["admin"], message='\n'.join(retmsg))
     if msg != []:
         await bot.send_private_msg(user_id=acinfo["admin"], message="以下农场号领取家园体、任务奖励、礼物箱出现报错：\n" + "\n".join(msg))
     else:
         await bot.send_private_msg(user_id=acinfo["admin"], message="所有农场号领取家园体、任务奖励、礼物箱成功")
+    
 
 
-async def brush(bot, i, equip_id):
+async def brush(bot, i, equip_id, ret=0):
     global flag_over_limit
     f = True
     msg = f"{acinfo['accounts'][i]['name']}(No.{i}) {acinfo['accounts'][i]['account']} -> {equip_id}"
@@ -546,6 +555,8 @@ async def brush(bot, i, equip_id):
         await query("present", i)
     if f == True:
         msg += "\nDone."
+    if ret:
+        return msg
     await bot.send_private_msg(user_id=acinfo["admin"], message=msg)
 
 
@@ -624,7 +635,7 @@ async def on_farm_bind(bot, ev):
             await bot.send_private_msg(user_id=ev.user_id, message=f"pcrid={pcrid}\nname={nam}\n申请成功！正在发起邀请...")
             res = await query("invite", pcrid=pcrid)
             if res == True:
-                await bot.send_private_msg(user_id=ev.user_id, message=f"公会名：{house_name}\n已发起邀请，请接受！")
+                await bot.send_private_msg(user_id=ev.user_id, message=f"公会名：{house_name}\n已发起邀请，请接受！\n本农场为免费农场，每日bot捐赠额度用完即止。\n若需付费农场，请询问{bot_name}主人。")
             elif type(res) == str:
                 await bot.send_private_msg(user_id=ev.user_id, message=res)
 
