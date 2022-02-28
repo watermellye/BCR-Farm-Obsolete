@@ -18,7 +18,7 @@ ordd = "Farm"
 house_name = "ebq的树屋"
 bot_name = "ebq"
 
-sv_help = f'''{bot_name}的农场（女生自用！）
+sv_help = f'''{bot_name}的免费农场！
 *添加←{bot_name}为好友后开始白嫖装备！
 指令列表：
 [加入农场 <pcrid>] pcrid为(b服)个人简介内13位数字
