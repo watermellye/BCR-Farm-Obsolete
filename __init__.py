@@ -334,7 +334,11 @@ async def query(info: str, account=-1, **args):
         item_list = {}
         for item in load_index["item_list"]:
             item_list[item["id"]] = item["stock"]
-        current_ticket = item_list[23001]
+        current_ticket = 0
+        try:
+            current_ticket = item_list[23001]
+        except:
+            pass
 
         user_equip = {}
         for item in load_index["user_equip"]:
@@ -356,6 +360,8 @@ async def query(info: str, account=-1, **args):
             return await present(client)
         if info == "get_donate_list":
             return await get_donate_list(client, clan_id)
+        if info == "server_time":
+            return load_index["user_info"]["last_ac_time"]
         if info == "donate":
             if "equip_id" in args:
                 equip_id = int(args["equip_id"])
@@ -402,7 +408,7 @@ async def on_farm_schedule(*args):
     # print("farm: 轮询 / 公会申请审批")
     # await query("accept")  # 先登录担任会长的农场号，看看有无加公会请求
     print("farm: 轮询 / 捐赠计时")
-    clock = [24, 8]
+    clock = [24]
     for pcrid in binds:
         for i in clock:
             if nowtime() - binds[pcrid]["donate_last"] > i * 3600 and binds[pcrid]["donate_clock"] < i:
@@ -426,10 +432,15 @@ async def on_farm_schedule(*args):
         if account[1] >= 10:
             continue
         res = await query("get_donate_list", account[0])
+        server_time = await query("server_time", account[0])
         #返回 clan_chat_message / users / equip_requests装备请求 / user_equip_data我的装备数量 / 其它（cooperation_data等）
         user = {}
         for i in res["users"]:
             user[i["viewer_id"]] = i["name"]
+        donate_message_time = {}
+        for i in res["clan_chat_message"]:
+            if i["message_type"] == 2:
+                donate_message_time[i["message_id"]] = i["create_time"]
         equip_requests = res["equip_requests"]
         user_equip_data = {}
         for i in res["user_equip_data"]:
@@ -439,6 +450,10 @@ async def on_farm_schedule(*args):
             # await asyncio.sleep(5)
             if "history" in equip:
                 continue  # 不响应自己的捐赠
+            if server_time - donate_message_time[equip["message_id"]] >= 28800:
+                continue  # 不响应超过八小时的捐赠
+            if str(equip['viewer_id']) not in binds:
+                continue  # 不响应不明人员
             if equip["donation_num"] < equip["request_num"]:  # 还没捐满
                 equip_name = equip2name[str(100000 + int(equip['equip_id']) % 10000)]
                 ff = True
