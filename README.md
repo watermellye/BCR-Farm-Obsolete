@@ -1,4 +1,4 @@
-# 国服pcr封包农场
+# b服pcr AutoFarm
 ellye、伊蕾娜、路路联合开发。女生自用。与pcr的通信基于pcrjjc2。
 
 ## 使用前准备
