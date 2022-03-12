@@ -494,7 +494,8 @@ async def on_farm_schedule(*args):
                         print(f"\n请发送[农场刷图 {account[0]} <要刷的图>]指定bot刷图")
                     await bot.send_private_msg(user_id=acinfo["admin"], message=msg)
 
-                donation_num = min(user_equip_data[equip["equip_id"]], 2 - equip["user_donation_num"], equip["request_num"] - equip["donation_num"])
+                donation_num = min(user_equip_data[equip["equip_id"]], 2 - equip["user_donation_num"], equip["request_num"] - equip["donation_num"],
+                                   10 - acinfo["accounts"][account[0]]["today_donate"])
                 if donation_num > 0:
                     # res = await query("donate", account[0], message_id=equip["message_id"], donation_num=donation_num, current_equip_num=user_equip_data[equip["equip_id"]])
                     res = await query("donate", account[0], message_id=equip["message_id"], donation_num=donation_num, equip_id=equip["equip_id"])
@@ -539,7 +540,7 @@ async def on_dayend(*args):  # 每天晚上23点领家园体、任务奖励、�
             pass
         else:
             msg.append(f"{account['name']}\n家园：{res1}\n任务：{res2}\n礼物：{res3}\n")
-        retmsg.append(await brush(bot, i, "14-12", 1))
+        retmsg.append(await brush(bot, i, "12-7", 1))
         if len(retmsg) > 5:
             await bot.send_private_msg(user_id=acinfo["admin"], message='\n'.join(retmsg))
             retmsg = []
