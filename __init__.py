@@ -129,7 +129,7 @@ async def captchaVerifier(gt, challenge, userid):
         uuid = res["uuid"]
         msg = [f"uuid={uuid}"]
         ccnt = 0
-        while ccnt < 5 and succ == 0 and validate == "":
+        while ccnt < 10 and succ == 0 and validate == "":
             ccnt += 1
             res = await (await get(url=f"https://pcrd.tencentbot.top/check/{uuid}")).content
             #if str(res.status_code) != "200":
@@ -152,6 +152,11 @@ async def captchaVerifier(gt, challenge, userid):
                     await asyncio.sleep(8)
                 elif len(info) > 20:
                     succ = 1
+            if ccnt >= 10:
+                global otto
+                otto = False
+                await bot.send_private_msg(user_id=acinfo['admin'], message=f'thread{ordd}: 自动过码多次尝试失败，可能为服务器错误，自动切换为手动。\n确实服务器无误后，可发送 validate{ordd} auto重新触发自动过码。')
+                await bot.send_private_msg(user_id=acinfo['admin'], message=f'thread{ordd}: Changed to manual')
     except:
         pass
     if succ:
