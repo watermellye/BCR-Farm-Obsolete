@@ -102,7 +102,7 @@ async def captchaVerifier(gt, challenge, userid):
     url = f"https://help.tencentbot.top/geetest/?captcha_type=1&challenge={challenge}&gt={gt}&userid={userid}&gs=1"
     global acfirst, validating
     global binds, lck, validate, captcha_lck
-
+    global otto
     if not otto:
         await bot.send_private_msg(
             user_id=acinfo['admin'],
@@ -153,7 +153,6 @@ async def captchaVerifier(gt, challenge, userid):
                 elif len(info) > 20:
                     succ = 1
             if ccnt >= 10:
-                global otto
                 otto = False
                 await bot.send_private_msg(user_id=acinfo['admin'], message=f'thread{ordd}: 自动过码多次尝试失败，可能为服务器错误，自动切换为手动。\n确实服务器无误后，可发送 validate{ordd} auto重新触发自动过码。')
                 await bot.send_private_msg(user_id=acinfo['admin'], message=f'thread{ordd}: Changed to manual')
