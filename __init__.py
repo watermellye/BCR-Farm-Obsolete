@@ -14,12 +14,14 @@ from hoshino.aiorequests import post, get
 import asyncio
 import time
 
+free = 1
+
 ordd = "Farm"
 house_name = "ebq的树屋"
 bot_name = "ebq"
 
-sv_help = f'''{bot_name}的免费农场！
-*添加←{bot_name}为好友后开始白嫖装备！
+sv_help = f'''{bot_name}的{"免费" if free else "付费"}农场！
+*{"" if free else "向bot主人咨询事宜，随后"}添加←{bot_name}为好友后开始{"白嫖" if free else "获取"}装备！
 指令列表：
 [加入农场 <pcrid>] pcrid为(b服)个人简介内13位数字
 [退出农场]
@@ -27,6 +29,7 @@ sv_help = f'''{bot_name}的免费农场！
 仅管理有效指令：
 [今日捐赠]
 [农场刷图 <bot编号> <要刷的图>] 若不指定编号则为全体农场号
+{"" if free else "[农场充值 <pcrid> <捐赠装备额度>]"}
 [农场人员] 返回所有被授权人员的id和名字
 [农场踢除 <pcrid>] 
 [农场清空]'''
@@ -52,6 +55,9 @@ if exists(config):
 
 binds = root["farm_bind"]  # {"1104356549126": "491673070"}
 quits = root["farm_quit"]
+binds_accept_pcrid = None
+if free != 1:
+    binds_accept_pcrid = root["farm_accept"]
 
 captcha_lck = Lock()
 
@@ -122,8 +128,7 @@ async def captchaVerifier(gt, challenge, userid):
     #await bot.send_private_msg(user_id=acinfo['admin'], message=f"thread{ordd}: Auto verifying\n欲手动过码，请发送 validate{ordd} manual")
     print(f"farm: Auto verifying")
     try:
-        res = await (await post(url="http://pcrd.tencentbot.top/validate", data=dumps({"url": url}), headers=header)).content  #https://pcrd.tencentbot.top/geetest
-
+        res = await (await post(url="http://pcrd.tencentbot.top/validate", data=dumps({"url": url}), headers=header)).content
         #if str(res.status_code) != "200":
         #    continue
         res = loads(res)
@@ -295,9 +300,11 @@ async def donate(client, clan_id, message_id, donation_num, current_equip_num):
     return (await client.callapi('/equipment/donate', {"clan_id": clan_id, "message_id": message_id, "donation_num": donation_num, "current_equip_num": current_equip_num}))
 
 
-def make_acinfo(i):
+def make_acinfo(i, **args):
     if i == -1:
         return {"account": acinfo["account"], "password": acinfo["password"], "platform": 2, "channel": 1, "admin": acinfo["admin"]}
+    elif i == -2:
+        return {"account": args["acc"], "password": args["password"], "platform": 2, "channel": 1, "admin": acinfo["admin"]}
     else:
         return {"account": acinfo["accounts"][i]["account"], "password": acinfo["accounts"][i]["password"], "platform": 2, "channel": 1, "admin": acinfo["admin"]}
 
@@ -314,7 +321,11 @@ async def query(info: str, account=-1, **args):
         #    bclient = bsdkclient(make_acinfo(account), captchaVerifier, errlogger)
         #    client = pcrclient(bclient)
         #    last_login = account
-        bclient = bsdkclient(make_acinfo(account), captchaVerifier, errlogger)
+        bclient = None
+        if account == -2:
+            bclient = bsdkclient(make_acinfo(account, acc=args["acc"], password=args["password"]), captchaVerifier, errlogger)
+        else:
+            bclient = bsdkclient(make_acinfo(account), captchaVerifier, errlogger)
         client = pcrclient(bclient)
         if client.shouldLogin:
             print(f"farm: try login / account={account}")
@@ -329,10 +340,12 @@ async def query(info: str, account=-1, **args):
         current_jewel = load_index["user_jewel"]["free_jewel"] + load_index["user_jewel"]["paid_jewel"]
         today_donation_num = home_index["user_clan"]["donation_num"]
 
-        if account != -1 and ("name" not in acinfo["accounts"][account] or acinfo["accounts"][account]["name"] != user_name):
+        if info == "load_index":
+            return load_index
+        if account not in [-1, -2] and ("name" not in acinfo["accounts"][account] or acinfo["accounts"][account]["name"] != user_name):
             acinfo["accounts"][account]["name"] = user_name
             save_acinfo()
-        if account != -1 and acinfo["accounts"][account]["today_donate"] < today_donation_num:
+        if account not in [-1, -2] and acinfo["accounts"][account]["today_donate"] < today_donation_num:
             acinfo["accounts"][account]["today_donate"] = today_donation_num
             save_acinfo()
 
@@ -413,7 +426,7 @@ async def on_farm_schedule(*args):
     # print("farm: 轮询 / 公会申请审批")
     # await query("accept")  # 先登录担任会长的农场号，看看有无加公会请求
     print("farm: 轮询 / 捐赠计时")
-    clock = [24]
+    clock = ([24] if free else [24, 8])
     for pcrid in binds:
         for i in clock:
             if nowtime() - binds[pcrid]["donate_last"] > i * 3600 and binds[pcrid]["donate_clock"] < i:
@@ -510,13 +523,33 @@ async def on_farm_schedule(*args):
                         save_acinfo()
                         binds[str(equip['viewer_id'])]["donate_num"] += donation_num
                         binds[str(equip['viewer_id'])]["donate_bot"].append(acinfo["accounts"][account[0]]["name"])
+                        if not free:
+                            binds_accept_pcrid[str(equip['viewer_id'])] -= donation_num
                         save_binds()
                         if donation_num + equip["donation_num"] == equip["request_num"]:
                             await bot.send_private_msg(user_id=int(binds[str(equip['viewer_id'])]["qqid"]),
-                                                       message=f"您的捐赠请求已完成！\n参与的{bot_name}有：" + f" ".join(binds[str(equip['viewer_id'])]['donate_bot']))
+                                                       message=f"您的捐赠请求已完成！\n参与的{bot_name}有：" + f" ".join(binds[str(equip['viewer_id'])]['donate_bot']) +
+                                                       f"" if free else f"\n您的剩余捐赠额度为：{binds_accept_pcrid[str(equip['viewer_id'])]}")
                             binds[str(equip['viewer_id'])]["donate_remind"] = False
                             binds[str(equip['viewer_id'])]["donate_num"] = 0
                             binds[str(equip['viewer_id'])]["donate_bot"] = []
+                            if not free:
+                                if binds_accept_pcrid[str(equip['viewer_id'])] <= -10:
+                                    pcrid = str(equip['viewer_id'])
+                                    quits[pcrid] = binds[pcrid]["qqid"]
+                                    binds.pop(pcrid)
+                                    save_binds()
+                                    await bot.send_private_msg(user_id=int(quits[pcrid]), message=f"您的捐赠额度已用尽，即将被移出农场。若仍需付费农场，请重新向主人购买。")
+                                    if await query("remove", pcrid=pcrid):
+                                        await bot.send_private_msg(user_id=int(quits[pcrid]), message=f"{pcrid}已退出农场")
+                                        quits.pop(pcrid)
+                                        save_binds()
+                                elif binds_accept_pcrid[str(equip['viewer_id'])] <= 0:
+                                    account = str(equip['viewer_id'])
+                                    qqid = int(binds[account]["qqid"])
+                                    await bot.send_private_msg(user_id=qqid, message=f"您的捐赠额度已用尽，进入缓冲区。当再次发起捐赠后，将被移出农场。\n若仍需付费农场，请重新向主人购买。")
+                                    await bot.send_private_msg(user_id=acinfo["admin"], message=f"{binds[account]['name']}({qqid})的捐赠额度已用尽，将被移出农场。")
+
                             save_binds()
                         if int(res["donation_num"]) == 10:
                             break
@@ -622,6 +655,42 @@ async def validate(session):
             pass
 
 
+@sv.on_prefix(("农场充值"))
+async def on_farm_pay(bot, ev):
+    if free:
+        return
+    if str(ev.user_id) != str(acinfo["admin"]):
+        return
+    global binds, lck
+    async with lck:
+        qqid = str(ev['user_id'])
+        pcrid = ev.message.extract_plain_text().strip().split()[0]
+        value = int(ev.message.extract_plain_text().strip().split()[1])
+        if pcrid == "":
+            await bot.send_private_msg(user_id=ev.user_id, message=sv_help)
+            return
+        if pcrid[0] == "<" and pcrid[-1] == ">":
+            pcrid = pcrid[1:-1]
+        nam = ""
+        try:
+            nam = (await query("profile", pcrid=pcrid))["user_name"]
+        except:
+            await bot.send_private_msg(user_id=ev.user_id, message="未找到玩家，请检查您的13位id！")
+            return
+        print(pcrid, value, nam)
+        if pcrid in quits:
+            quits.pop(pcrid)
+            await bot.send_private_msg(user_id=ev.user_id, message=f"该账号曾请求退出农场，已删除旧请求。")
+
+        if pcrid in binds_accept_pcrid:
+            binds_accept_pcrid[pcrid] += value
+        else:
+            binds_accept_pcrid[pcrid] = value
+        save_binds()
+
+        await bot.send_private_msg(user_id=ev.user_id, message=f"pcrid={pcrid}\nname={nam}\n充值成功！当前捐赠装备余额：{binds_accept_pcrid[pcrid]}")
+
+
 @sv.on_prefix(("加入农场"))
 async def on_farm_bind(bot, ev):
     global binds, lck
@@ -640,6 +709,13 @@ async def on_farm_bind(bot, ev):
         except:
             await bot.send_private_msg(user_id=ev.user_id, message="未找到玩家，请检查您的13位id！")
             return
+        if not free:
+            if pcrid not in binds_accept_pcrid:
+                await bot.send_private_msg(user_id=ev.user_id, message=f"本农场为付费农场，请向主人获取授权！\n若需免费农场，请转向ebq申请。")
+                return
+            if binds_accept_pcrid[pcrid] <= 0:
+                await bot.send_private_msg(user_id=ev.user_id, message="您的捐赠额度已用尽，请向主人重新购买！")
+                return
         if pcrid in quits:
             quits.pop(pcrid)
             await bot.send_private_msg(user_id=ev.user_id, message=f"该账号曾请求退出农场，已删除旧请求。")
@@ -652,10 +728,10 @@ async def on_farm_bind(bot, ev):
         else:
             binds[pcrid] = {"qqid": qqid, "name": nam, 'donate_last': nowtime(), 'donate_remind': False, 'donate_clock': 0, 'donate_num': 0, 'donate_bot': []}
             save_binds()
-            await bot.send_private_msg(user_id=ev.user_id, message=f"pcrid={pcrid}\nname={nam}\n申请成功！正在发起邀请...")
+            await bot.send_private_msg(user_id=ev.user_id, message=f"pcrid={pcrid}\nname={nam}\n申请成功！" + "" if free else f"\n您的装备捐赠余额为 {binds_accept_pcrid[pcrid]} 个。\n" + "正在发起邀请...")
             res = await query("invite", pcrid=pcrid)
             if res == True:
-                await bot.send_private_msg(user_id=ev.user_id, message=f"公会名：{house_name}\n已发起邀请，请接受！\n本农场为免费农场，每日bot捐赠额度用完即止。\n若需付费农场，请询问{bot_name}主人。")
+                await bot.send_private_msg(user_id=ev.user_id, message=f"公会名：{house_name}\n已发起邀请，请接受！" + "\n本农场为免费农场，每日bot捐赠额度用完即止。\n若需付费农场，请询问{bot_name}主人。" if free else "")
             elif type(res) == str:
                 await bot.send_private_msg(user_id=ev.user_id, message=res)
 
@@ -721,9 +797,13 @@ async def query_farm_info(bot, ev):
         return
     msg = []
     for account in binds:
-        msg.append(f"{account} / {binds[account]['qqid']} / {binds[account]['name']} / {(nowtime() - binds[account]['donate_last']) / 3600 :.1f}H")
+        msg.append(f"{account} / {binds[account]['qqid']} / {binds[account]['name']} / {'' if free else binds_accept_pcrid[account]} / {(nowtime() - binds[account]['donate_last']) / 3600 :.1f}H")
+    if not free:
+        for account in binds_accept_pcrid:
+            if account not in binds:
+                msg.append(f"{account}(未进入农场) balance={binds_accept_pcrid[account]}")
     if msg != []:
-        await bot.send_private_msg(user_id=ev.user_id, message="授权人员\npcrid / qqid / name / last\n" + "\n".join(msg))
+        await bot.send_private_msg(user_id=ev.user_id, message=f'授权人员\npcrid / qqid / name /{"" if free else " balance /"} last\n' + "\n".join(msg))
     else:
         await bot.send_private_msg(user_id=ev.user_id, message="当前没有人被授权进入农场！")
 
