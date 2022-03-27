@@ -122,7 +122,8 @@ async def captchaVerifier(gt, challenge, userid):
     #await bot.send_private_msg(user_id=acinfo['admin'], message=f"thread{ordd}: Auto verifying\n欲手动过码，请发送 validate{ordd} manual")
     print(f"farm: Auto verifying")
     try:
-        res = await (await post(url="http://pcrd.tencentbot.top/validate", data=dumps({"url": url}), headers=header)).content
+        res = await (await post(url="http://pcrd.tencentbot.top/validate", data=dumps({"url": url}), headers=header)).content  #https://pcrd.tencentbot.top/geetest
+
         #if str(res.status_code) != "200":
         #    continue
         res = loads(res)
@@ -531,9 +532,9 @@ async def on_farm_schedule(*args):
 
 
 @sv.scheduled_job('cron', hour='23')
-# @sv.on_fullmatch('领取日常')
 async def on_dayend(*args):  # 每天晚上23点领家园体、任务奖励、礼物箱
     global bot
+    await _today_donate()
     msg = []
     retmsg = []
     for i, account in enumerate(acinfo["accounts"]):
@@ -685,10 +686,7 @@ async def delete_farm_sub(bot, ev):
                     await bot.send_private_msg(user_id=ev.user_id, message=f"{pcrid}已退出农场")
 
 
-@sv.on_fullmatch(("今日捐赠", "查询捐赠"))
-async def today_donate(bot, ev):
-    if str(ev.user_id) != str(acinfo["admin"]):
-        return
+async def _today_donate():
     donate = {}
     for i, account in enumerate(acinfo["accounts"]):
         try:
@@ -699,7 +697,7 @@ async def today_donate(bot, ev):
     # [(3, 11), (6, 9), (7, 6), (10, 5), (8, 2)]
     last = donate[0][1]
     if last == 0:
-        await bot.send_private_msg(user_id=ev.user_id, message="今日所有bot均未产生捐赠！")
+        await bot.send_private_msg(user_id=int(acinfo["admin"]), message="今日所有bot均未产生捐赠！")
         return
     msg = f"{last:2d} :"
     for i in donate:
@@ -707,7 +705,14 @@ async def today_donate(bot, ev):
             last = i[1]
             msg += f"\n{last:2d} :"
         msg += f" {acinfo['accounts'][i[0]]['name']}({i[0]})"
-    await bot.send_private_msg(user_id=ev.user_id, message=msg)
+    await bot.send_private_msg(user_id=int(acinfo["admin"]), message=msg)
+
+
+@sv.on_fullmatch(("今日捐赠", "查询捐赠"))
+async def today_donate(bot, ev):
+    if str(ev.user_id) != str(acinfo["admin"]):
+        return
+    await _today_donate()
 
 
 @sv.on_fullmatch(("农场成员", "农场人员", "查询农场", "查询农场人员", "查询农场成员", "查询农场信息", "农场名单"))
