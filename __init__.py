@@ -14,7 +14,7 @@ from hoshino.aiorequests import post, get
 import asyncio
 import time
 
-free = 1
+free = 0
 
 ordd = "Farm"
 house_name = "ebq的树屋"
@@ -44,7 +44,7 @@ async def send_jjchelp(bot, ev):
 
 curpath = dirname(__file__)
 config = join(curpath, 'binds.json')
-root = {"farm_bind": {}, "farm_quit": {}}
+root = {"farm_bind": {}, "farm_quit": {}, "farm_accept": {}}
 
 cache = {}
 lck = Lock()
@@ -655,6 +655,27 @@ async def validate(session):
             pass
 
 
+async def farm_pay(bot, ev, pcrid, value):
+    nam = ""
+    try:
+        nam = (await query("profile", pcrid=pcrid))["user_name"]
+    except:
+        await bot.send_private_msg(user_id=ev.user_id, message="未找到玩家，请检查您的13位id！")
+        return
+    print(pcrid, value, nam)
+    if pcrid in quits:
+        quits.pop(pcrid)
+        await bot.send_private_msg(user_id=ev.user_id, message=f"该账号曾请求退出农场，已删除旧请求。")
+
+    if pcrid in binds_accept_pcrid:
+        binds_accept_pcrid[pcrid] += value
+    else:
+        binds_accept_pcrid[pcrid] = value
+    save_binds()
+
+    await bot.send_private_msg(user_id=ev.user_id, message=f"pcrid={pcrid}\nname={nam}\n充值成功！当前捐赠装备余额：{binds_accept_pcrid[pcrid]}")
+
+
 @sv.on_prefix(("农场充值"))
 async def on_farm_pay(bot, ev):
     if free:
@@ -671,24 +692,7 @@ async def on_farm_pay(bot, ev):
             return
         if pcrid[0] == "<" and pcrid[-1] == ">":
             pcrid = pcrid[1:-1]
-        nam = ""
-        try:
-            nam = (await query("profile", pcrid=pcrid))["user_name"]
-        except:
-            await bot.send_private_msg(user_id=ev.user_id, message="未找到玩家，请检查您的13位id！")
-            return
-        print(pcrid, value, nam)
-        if pcrid in quits:
-            quits.pop(pcrid)
-            await bot.send_private_msg(user_id=ev.user_id, message=f"该账号曾请求退出农场，已删除旧请求。")
-
-        if pcrid in binds_accept_pcrid:
-            binds_accept_pcrid[pcrid] += value
-        else:
-            binds_accept_pcrid[pcrid] = value
-        save_binds()
-
-        await bot.send_private_msg(user_id=ev.user_id, message=f"pcrid={pcrid}\nname={nam}\n充值成功！当前捐赠装备余额：{binds_accept_pcrid[pcrid]}")
+        await farm_pay(bot, ev, pcrid, value)
 
 
 @sv.on_prefix(("加入农场"))
@@ -711,8 +715,8 @@ async def on_farm_bind(bot, ev):
             return
         if not free:
             if pcrid not in binds_accept_pcrid:
-                await bot.send_private_msg(user_id=ev.user_id, message=f"本农场为付费农场，请向主人获取授权！\n若需免费农场，请转向ebq申请。")
-                return
+                await bot.send_private_msg(user_id=ev.user_id, message=f"本农场为付费农场，请向主人获取授权！\n由于您是新用户，{bot_name}赠送1次捐赠！")
+                await farm_pay(bot, ev, pcrid, 10)
             if binds_accept_pcrid[pcrid] <= 0:
                 await bot.send_private_msg(user_id=ev.user_id, message="您的捐赠额度已用尽，请向主人重新购买！")
                 return
@@ -731,7 +735,7 @@ async def on_farm_bind(bot, ev):
             await bot.send_private_msg(user_id=ev.user_id, message=f"pcrid={pcrid}\nname={nam}\n申请成功！" + "" if free else f"\n您的装备捐赠余额为 {binds_accept_pcrid[pcrid]} 个。\n" + "正在发起邀请...")
             res = await query("invite", pcrid=pcrid)
             if res == True:
-                await bot.send_private_msg(user_id=ev.user_id, message=f"公会名：{house_name}\n已发起邀请，请接受！" + "\n本农场为免费农场，每日bot捐赠额度用完即止。\n若需付费农场，请询问{bot_name}主人。" if free else "")
+                await bot.send_private_msg(user_id=ev.user_id, message=f"公会名：{house_name}\n已发起邀请，请接受！")
             elif type(res) == str:
                 await bot.send_private_msg(user_id=ev.user_id, message=res)
 
