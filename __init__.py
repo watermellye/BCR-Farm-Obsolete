@@ -467,6 +467,7 @@ async def on_farm_schedule(*args):
         for equip in equip_requests:
             # await asyncio.sleep(5)
             if "history" in equip:
+                ff = True
                 continue  # 不响应自己的捐赠
             if server_time - donate_message_time[equip["message_id"]] >= 28800:
                 continue  # 不响应超过八小时的捐赠
@@ -528,8 +529,8 @@ async def on_farm_schedule(*args):
                         save_binds()
                         if donation_num + equip["donation_num"] == equip["request_num"]:
                             await bot.send_private_msg(user_id=int(binds[str(equip['viewer_id'])]["qqid"]),
-                                                       message=f"您的捐赠请求已完成！\n参与的{bot_name}有：" + f" ".join(binds[str(equip['viewer_id'])]['donate_bot']) +
-                                                       f"" if free else f"\n您的剩余捐赠额度为：{binds_accept_pcrid[str(equip['viewer_id'])]}")
+                                                       message=f"您的捐赠请求已完成！\n参与的{bot_name}有：" + " ".join(binds[str(equip['viewer_id'])]['donate_bot']) +
+                                                       ("" if free else f"\n您的剩余捐赠额度为：{binds_accept_pcrid[str(equip['viewer_id'])]}"))
                             binds[str(equip['viewer_id'])]["donate_remind"] = False
                             binds[str(equip['viewer_id'])]["donate_num"] = 0
                             binds[str(equip['viewer_id'])]["donate_bot"] = []
@@ -732,7 +733,7 @@ async def on_farm_bind(bot, ev):
         else:
             binds[pcrid] = {"qqid": qqid, "name": nam, 'donate_last': nowtime(), 'donate_remind': False, 'donate_clock': 0, 'donate_num': 0, 'donate_bot': []}
             save_binds()
-            await bot.send_private_msg(user_id=ev.user_id, message=f"pcrid={pcrid}\nname={nam}\n申请成功！" + "" if free else f"\n您的装备捐赠余额为 {binds_accept_pcrid[pcrid]} 个。\n" + "正在发起邀请...")
+            await bot.send_private_msg(user_id=ev.user_id, message=f"pcrid={pcrid}\nname={nam}\n申请成功！" + ("" if free else f"\n您的装备捐赠余额为 {binds_accept_pcrid[pcrid]} 个。\n" + "正在发起邀请..."))
             res = await query("invite", pcrid=pcrid)
             if res == True:
                 await bot.send_private_msg(user_id=ev.user_id, message=f"公会名：{house_name}\n已发起邀请，请接受！")
