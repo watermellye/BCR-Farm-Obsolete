@@ -95,7 +95,7 @@ async def login(bili_account, bili_pwd, make_captch):
     if otto == True:
         cap = await make_captch(True, True)
         if cap == "manual":
-            otto == False
+            otto = False
         else:
             login_sta = await login2(bili_account, bili_pwd, cap["challenge"], cap['gt_user_id'], cap['validate'])
             if "access_key" in login_sta:

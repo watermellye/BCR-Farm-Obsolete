@@ -568,7 +568,8 @@ async def on_farm_schedule(*args):
 
             if ff == False:
                 break
-        except:
+        except Exception as e:
+            print(f'account={account}轮询失败：{repr(e)}')
             pass
     global ff_last
     if ff == True and ff_last == False:
