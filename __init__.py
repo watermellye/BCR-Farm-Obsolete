@@ -120,8 +120,8 @@ async def captchaVerifier(*args):
     if not acfirst:
         await captcha_lck.acquire()
         acfirst = True
-    validating = True
 
+    validating = True
     if otto == False:
         gt = args[0]
         challenge = args[1]
@@ -172,6 +172,12 @@ async def captchaVerifier(*args):
         otto = False
         await bot.send_private_msg(user_id=acinfo['admin'], message=f'thread{ordd}: 自动过码多次尝试失败，可能为服务器错误，自动切换为手动。\n确实服务器无误后，可发送 validate{ordd} auto重新触发自动过码。')
         await bot.send_private_msg(user_id=acinfo['admin'], message=f'thread{ordd}: Changed to manual')
+        validating = False
+        return "manual"
+
+    await errlogger("captchaVerifier: uncaught exception")
+    validating = False
+    return False
 
 
 async def errlogger(msg):
@@ -310,11 +316,10 @@ def make_acinfo(i, **args):
 
 
 async def query(info: str, account=-1, **args):
+    await asyncio.sleep(1)
+    if validating:
+        raise ApiException('账号被风控或正在验证中，请联系管理员输入验证码并重新登录', -1)
     try:
-        await asyncio.sleep(1)
-        if validating:
-            raise ApiException('账号被风控，请联系管理员输入验证码并重新登录', -1)
-
         # global last_login, bclient, client
         # global load_index, home_index
         async with qlck:
@@ -452,116 +457,119 @@ async def on_farm_schedule(*args):
     for account in donate:
         if account[1] >= 10:
             continue
-        res = await query("get_donate_list", account[0])
-        server_time = await query("server_time", account[0])
-        #返回 clan_chat_message / users / equip_requests装备请求 / user_equip_data我的装备数量 / 其它（cooperation_data等）
-        user = {}
-        for i in res["users"]:
-            user[i["viewer_id"]] = i["name"]
-        donate_message_time = {}
-        for i in res["clan_chat_message"]:
-            if i["message_type"] == 2:
-                donate_message_time[i["message_id"]] = i["create_time"]
-        equip_requests = res["equip_requests"]
-        user_equip_data = {}
-        for i in res["user_equip_data"]:
-            user_equip_data[i["equip_id"]] = i["equip_count"]
-        ff = False
-        for equip in equip_requests:
-            # await asyncio.sleep(5)
-            if "history" in equip:
-                ff = True
-                continue  # 不响应自己的捐赠
-            if server_time - donate_message_time[equip["message_id"]] >= 28800:
-                continue  # 不响应超过八小时的捐赠
-            if str(equip['viewer_id']) not in binds:
-                continue  # 不响应不明人员
-            if equip["donation_num"] < equip["request_num"]:  # 还没捐满
-                equip_name = equip2name[str(100000 + int(equip['equip_id']) % 10000)]
-                ff = True
-                if str(equip['viewer_id']) in binds:
-                    if equip["donation_num"] == 0:
-                        if binds[str(equip['viewer_id'])]["donate_remind"] == False or binds[str(equip['viewer_id'])]["donate_last"] > 8 * 3600:
-                            await bot.send_private_msg(user_id=int(binds[str(equip['viewer_id'])]["qqid"]), message=f"检测到 {user[equip['viewer_id']]} 的装备请求：{equip_name}({equip['equip_id']})")
-                            binds[str(equip['viewer_id'])]["donate_last"] = nowtime()
-                            binds[str(equip['viewer_id'])]["donate_remind"] = True
-                            binds[str(equip['viewer_id'])]["donate_clock"] = 0
-                        binds[str(equip['viewer_id'])]["donate_num"] = 0
-                        binds[str(equip['viewer_id'])]["donate_bot"] = []
-                        save_binds()
-
-                #print(equip["equip_id"] in user_equip_data)
-                #print(user_equip_data[equip["equip_id"]])
-                #if user_equip_data[equip["equip_id"]] < 3000:  # 测试用
-                if user_equip_data[equip["equip_id"]] < 30:  # 该装备已较少
-                    msg = f"{acinfo['accounts'][account[0]]['name']}的装备{equip_name}({equip['equip_id']})存量较少，剩余{user_equip_data[equip['equip_id']]}。"
-                    equip_map_list = equip2list[str(equip['equip_id'])]
-                    if equip["equip_id"] not in f_low_equip_remind:
-                        f_low_equip_remind.append(equip["equip_id"])
-                        msg += "\n包含该装备的图有：" + " ".join(equip_map_list)
-                    f_getequip = False
-                    for equip_map in equip_map_list:
-                        msg += f"\n尝试自动刷取{equip_map}："
-                        res = await query("get_equip", account[0], equip_id=equip_map)
-                        if res == True:
-                            f_getequip = True
-                            msg += "Succeed"
-                            break
-                        if type(res) == str:
-                            msg += f"Failed {res}"
-                        else:
-                            msg += "Failed"
-                    if f_getequip == False:
-                        msg += f"\n请发送[农场刷图 {account[0]} <要刷的图>]指定bot刷图"
-                        print(f"\n请发送[农场刷图 {account[0]} <要刷的图>]指定bot刷图")
-                    await bot.send_private_msg(user_id=acinfo["admin"], message=msg)
-
-                donation_num = min(user_equip_data[equip["equip_id"]], 2 - equip["user_donation_num"], equip["request_num"] - equip["donation_num"],
-                                   10 - acinfo["accounts"][account[0]]["today_donate"])
-                if donation_num > 0:
-                    # res = await query("donate", account[0], message_id=equip["message_id"], donation_num=donation_num, current_equip_num=user_equip_data[equip["equip_id"]])
-                    res = await query("donate", account[0], message_id=equip["message_id"], donation_num=donation_num, equip_id=equip["equip_id"])
-                    if "server_error" not in res:
-                        user_equip_data[equip["equip_id"]] -= donation_num
-                        acinfo["accounts"][account[0]]["today_donate"] = int(res["donation_num"])
-                        save_acinfo()
-                        binds[str(equip['viewer_id'])]["donate_num"] += donation_num
-                        binds[str(equip['viewer_id'])]["donate_bot"].append(acinfo["accounts"][account[0]]["name"])
-                        if not free:
-                            binds_accept_pcrid[str(equip['viewer_id'])] -= donation_num
-                        save_binds()
-                        if donation_num + equip["donation_num"] == equip["request_num"]:
-                            msgg = f"您的捐赠请求已完成！\n参与的{bot_name}有：" + " ".join(binds[str(
-                                equip['viewer_id'])]['donate_bot']) + ("" if free else f"\n您的剩余捐赠额度为：{binds_accept_pcrid[str(equip['viewer_id'])]}")
-                            await bot.send_private_msg(user_id=int(binds[str(equip['viewer_id'])]["qqid"]), message=msgg)
-                            binds[str(equip['viewer_id'])]["donate_remind"] = False
+        try:
+            res = await query("get_donate_list", account[0])
+            server_time = await query("server_time", account[0])
+            #返回 clan_chat_message / users / equip_requests装备请求 / user_equip_data我的装备数量 / 其它（cooperation_data等）
+            user = {}
+            for i in res["users"]:
+                user[i["viewer_id"]] = i["name"]
+            donate_message_time = {}
+            for i in res["clan_chat_message"]:
+                if i["message_type"] == 2:
+                    donate_message_time[i["message_id"]] = i["create_time"]
+            equip_requests = res["equip_requests"]
+            user_equip_data = {}
+            for i in res["user_equip_data"]:
+                user_equip_data[i["equip_id"]] = i["equip_count"]
+            ff = False
+            for equip in equip_requests:
+                # await asyncio.sleep(5)
+                if "history" in equip:
+                    ff = True
+                    continue  # 不响应自己的捐赠
+                if server_time - donate_message_time[equip["message_id"]] >= 28800:
+                    continue  # 不响应超过八小时的捐赠
+                if str(equip['viewer_id']) not in binds:
+                    continue  # 不响应不明人员
+                if equip["donation_num"] < equip["request_num"]:  # 还没捐满
+                    equip_name = equip2name[str(100000 + int(equip['equip_id']) % 10000)]
+                    ff = True
+                    if str(equip['viewer_id']) in binds:
+                        if equip["donation_num"] == 0:
+                            if binds[str(equip['viewer_id'])]["donate_remind"] == False or binds[str(equip['viewer_id'])]["donate_last"] > 8 * 3600:
+                                await bot.send_private_msg(user_id=int(binds[str(equip['viewer_id'])]["qqid"]), message=f"检测到 {user[equip['viewer_id']]} 的装备请求：{equip_name}({equip['equip_id']})")
+                                binds[str(equip['viewer_id'])]["donate_last"] = nowtime()
+                                binds[str(equip['viewer_id'])]["donate_remind"] = True
+                                binds[str(equip['viewer_id'])]["donate_clock"] = 0
                             binds[str(equip['viewer_id'])]["donate_num"] = 0
                             binds[str(equip['viewer_id'])]["donate_bot"] = []
-                            if not free:
-                                if binds_accept_pcrid[str(equip['viewer_id'])] <= -10:
-                                    pcrid = str(equip['viewer_id'])
-                                    quits[pcrid] = binds[pcrid]["qqid"]
-                                    binds.pop(pcrid)
-                                    save_binds()
-                                    await bot.send_private_msg(user_id=int(quits[pcrid]), message=f"您的捐赠额度已用尽，即将被移出农场。若仍需付费农场，请重新向主人购买。")
-                                    if await query("remove", pcrid=pcrid):
-                                        await bot.send_private_msg(user_id=int(quits[pcrid]), message=f"{pcrid}已退出农场")
-                                        quits.pop(pcrid)
-                                        save_binds()
-                                elif binds_accept_pcrid[str(equip['viewer_id'])] <= 0:
-                                    account = str(equip['viewer_id'])
-                                    qqid = int(binds[account]["qqid"])
-                                    await bot.send_private_msg(user_id=qqid, message=f"您的捐赠额度已用尽，进入缓冲区。当再次发起捐赠后，将被移出农场。\n若仍需付费农场，请重新向主人购买。")
-                                    await bot.send_private_msg(user_id=acinfo["admin"], message=f"{binds[account]['name']}({qqid})的捐赠额度已用尽，将被移出农场。")
-
                             save_binds()
-                        if int(res["donation_num"]) == 10:
-                            break
-                    else:
-                        await bot.send_private_msg(user_id=acinfo["admin"], message=f"{acinfo['accounts'][account[0]]['name']}的装备捐赠失败：\n" + str(res))
 
-        if ff == False:
-            break
+                    #print(equip["equip_id"] in user_equip_data)
+                    #print(user_equip_data[equip["equip_id"]])
+                    #if user_equip_data[equip["equip_id"]] < 3000:  # 测试用
+                    if user_equip_data[equip["equip_id"]] < 30:  # 该装备已较少
+                        msg = f"{acinfo['accounts'][account[0]]['name']}的装备{equip_name}({equip['equip_id']})存量较少，剩余{user_equip_data[equip['equip_id']]}。"
+                        equip_map_list = equip2list[str(equip['equip_id'])]
+                        if equip["equip_id"] not in f_low_equip_remind:
+                            f_low_equip_remind.append(equip["equip_id"])
+                            msg += "\n包含该装备的图有：" + " ".join(equip_map_list)
+                        f_getequip = False
+                        for equip_map in equip_map_list:
+                            msg += f"\n尝试自动刷取{equip_map}："
+                            res = await query("get_equip", account[0], equip_id=equip_map)
+                            if res == True:
+                                f_getequip = True
+                                msg += "Succeed"
+                                break
+                            if type(res) == str:
+                                msg += f"Failed {res}"
+                            else:
+                                msg += "Failed"
+                        if f_getequip == False:
+                            msg += f"\n请发送[农场刷图 {account[0]} <要刷的图>]指定bot刷图"
+                            print(f"\n请发送[农场刷图 {account[0]} <要刷的图>]指定bot刷图")
+                        await bot.send_private_msg(user_id=acinfo["admin"], message=msg)
+
+                    donation_num = min(user_equip_data[equip["equip_id"]], 2 - equip["user_donation_num"], equip["request_num"] - equip["donation_num"],
+                                       10 - acinfo["accounts"][account[0]]["today_donate"])
+                    if donation_num > 0:
+                        # res = await query("donate", account[0], message_id=equip["message_id"], donation_num=donation_num, current_equip_num=user_equip_data[equip["equip_id"]])
+                        res = await query("donate", account[0], message_id=equip["message_id"], donation_num=donation_num, equip_id=equip["equip_id"])
+                        if "server_error" not in res:
+                            user_equip_data[equip["equip_id"]] -= donation_num
+                            acinfo["accounts"][account[0]]["today_donate"] = int(res["donation_num"])
+                            save_acinfo()
+                            binds[str(equip['viewer_id'])]["donate_num"] += donation_num
+                            binds[str(equip['viewer_id'])]["donate_bot"].append(acinfo["accounts"][account[0]]["name"])
+                            if not free:
+                                binds_accept_pcrid[str(equip['viewer_id'])] -= donation_num
+                            save_binds()
+                            if donation_num + equip["donation_num"] == equip["request_num"]:
+                                msgg = f"您的捐赠请求已完成！\n参与的{bot_name}有：" + " ".join(binds[str(
+                                    equip['viewer_id'])]['donate_bot']) + ("" if free else f"\n您的剩余捐赠额度为：{binds_accept_pcrid[str(equip['viewer_id'])]}")
+                                await bot.send_private_msg(user_id=int(binds[str(equip['viewer_id'])]["qqid"]), message=msgg)
+                                binds[str(equip['viewer_id'])]["donate_remind"] = False
+                                binds[str(equip['viewer_id'])]["donate_num"] = 0
+                                binds[str(equip['viewer_id'])]["donate_bot"] = []
+                                if not free:
+                                    if binds_accept_pcrid[str(equip['viewer_id'])] <= -10:
+                                        pcrid = str(equip['viewer_id'])
+                                        quits[pcrid] = binds[pcrid]["qqid"]
+                                        binds.pop(pcrid)
+                                        save_binds()
+                                        await bot.send_private_msg(user_id=int(quits[pcrid]), message=f"您的捐赠额度已用尽，即将被移出农场。若仍需付费农场，请重新向主人购买。")
+                                        if await query("remove", pcrid=pcrid):
+                                            await bot.send_private_msg(user_id=int(quits[pcrid]), message=f"{pcrid}已退出农场")
+                                            quits.pop(pcrid)
+                                            save_binds()
+                                    elif binds_accept_pcrid[str(equip['viewer_id'])] <= 0:
+                                        account = str(equip['viewer_id'])
+                                        qqid = int(binds[account]["qqid"])
+                                        await bot.send_private_msg(user_id=qqid, message=f"您的捐赠额度已用尽，进入缓冲区。当再次发起捐赠后，将被移出农场。\n若仍需付费农场，请重新向主人购买。")
+                                        await bot.send_private_msg(user_id=acinfo["admin"], message=f"{binds[account]['name']}({qqid})的捐赠额度已用尽，将被移出农场。")
+
+                                save_binds()
+                            if int(res["donation_num"]) == 10:
+                                break
+                        else:
+                            await bot.send_private_msg(user_id=acinfo["admin"], message=f"{acinfo['accounts'][account[0]]['name']}的装备捐赠失败：\n" + str(res))
+
+            if ff == False:
+                break
+        except:
+            pass
     global ff_last
     if ff == True and ff_last == False:
         await bot.send_private_msg(user_id=acinfo["admin"], message=f"存在无法完成的装备请求，可能是今日bot捐赠额度已用尽。")
