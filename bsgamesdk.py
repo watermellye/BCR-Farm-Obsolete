@@ -87,25 +87,20 @@ async def login(bili_account, bili_pwd, make_captch):
     if "access_key" in login_sta:
         return login_sta
 
+    otto = False
     try:
         otto = await make_captch()
-        if otto == False:
-            cap = await captch()
-            captch_done = await make_captch(cap['gt'], cap['challenge'], cap['gt_user_id'])
-            login_sta = await login2(bili_account, bili_pwd, cap["challenge"], cap['gt_user_id'], captch_done)
-            return login_sta
+    except:  # 兼容原版手动过码
+        pass
 
-        while True:
-            cap = await make_captch(True, True)
-            login_sta = await login2(bili_account, bili_pwd, cap["challenge"], cap['gt_user_id'], cap['validate'])
-            if "access_key" in login_sta:
-                await make_captch(0)
-                return login_sta
-            else:
-                from . import errlogger
-                errlogger(f'{login_sta}')
-    except:  # 兼容原版过码
+    if otto == False:
         cap = await captch()
         captch_done = await make_captch(cap['gt'], cap['challenge'], cap['gt_user_id'])
         login_sta = await login2(bili_account, bili_pwd, cap["challenge"], cap['gt_user_id'], captch_done)
         return login_sta
+
+    cap = await make_captch(True, True)
+    login_sta = await login2(bili_account, bili_pwd, cap["challenge"], cap['gt_user_id'], cap['validate'])
+    if "access_key" in login_sta:
+        await make_captch(0)
+    return login_sta
