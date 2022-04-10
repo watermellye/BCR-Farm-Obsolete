@@ -103,75 +103,71 @@ validating = False
 otto = True
 acfirst = False
 
+captcha_cnt = 0
 
-async def captchaVerifier(gt, challenge, userid):
-    url = f"https://help.tencentbot.top/geetest/?captcha_type=1&challenge={challenge}&gt={gt}&userid={userid}&gs=1"
+
+async def captchaVerifier(*args):
+    global otto
+    if len(args) == 0:
+        return otto
     global acfirst, validating
     global binds, lck, validate, captcha_lck
-    global otto
-    if not otto:
+    if not acfirst:
+        await captcha_lck.acquire()
+        acfirst = True
+    validating = True
+
+    if otto == False:
+        gt = args[0]
+        challenge = args[1]
+        userid = args[2]
+        url = f"https://help.tencentbot.top/geetest/?captcha_type=1&challenge={challenge}&gt={gt}&userid={userid}&gs=1"
         await bot.send_private_msg(
             user_id=acinfo['admin'],
             message=f'pcr账号登录需要验证码，请完成以下链接中的验证内容后将第1个方框的内容点击复制，并加上"validate{ordd} "前缀发送给机器人完成验证\n验证链接：{url}\n示例：validate{ordd} 123456789\n您也可以发送 validate{ordd} auto 命令bot自动过验证码')
-        if not acfirst:
-            await captcha_lck.acquire()
-            acfirst = True
-        validating = True
         await captcha_lck.acquire()
         validating = False
         return validate
 
-    validate = ""
-    header = {"Content-Type": "application/json"}
-    succ = 0
-    info = ""
-    #await bot.send_private_msg(user_id=acinfo['admin'], message=f"thread{ordd}: Auto verifying\n欲手动过码，请发送 validate{ordd} manual")
-    print(f"farm: Auto verifying")
-    try:
-        res = await (await post(url="http://pcrd.tencentbot.top/validate", data=dumps({"url": url}), headers=header)).content
-        #if str(res.status_code) != "200":
-        #    continue
-        res = loads(res)
-        uuid = res["uuid"]
-        msg = [f"uuid={uuid}"]
-        ccnt = 0
-        while ccnt < 10 and succ == 0 and validate == "":
-            ccnt += 1
-            res = await (await get(url=f"https://pcrd.tencentbot.top/check/{uuid}")).content
-            #if str(res.status_code) != "200":
-            #    continue
-            res = loads(res)
-            if "queue_num" in res:
-                nu = res["queue_num"]
-                msg.append(f"queue_num={nu}")
-                tim = min(int(nu), 3) * 20
-                msg.append(f"sleep={tim}")
-                #await bot.send_private_msg(user_id=acinfo['admin'], message=f"thread{ordd}: \n" + "\n".join(msg))
-                print(f"farm:\n" + "\n".join(msg))
-                msg = []
-                await asyncio.sleep(tim)
-            else:
-                info = res["info"]
-                if info in ["fail", "url invalid"]:
-                    break
-                elif info == "in running":
-                    await asyncio.sleep(8)
-                elif len(info) > 20:
-                    succ = 1
-            if ccnt >= 10:
-                otto = False
-                await bot.send_private_msg(user_id=acinfo['admin'], message=f'thread{ordd}: 自动过码多次尝试失败，可能为服务器错误，自动切换为手动。\n确实服务器无误后，可发送 validate{ordd} auto重新触发自动过码。')
-                await bot.send_private_msg(user_id=acinfo['admin'], message=f'thread{ordd}: Changed to manual')
-    except:
-        pass
-    if succ:
-        validate = info
-    #await bot.send_private_msg(user_id=acinfo['admin'], message=f"thread{ordd}: succ={succ} validate={validate}")
-    print(f"farm: succ={succ} validate={validate}")
+    global captcha_cnt
+    while captcha_cnt < 5:
+        captcha_cnt += 1
+        try:
+            print(f'测试新版自动过码中，当前尝试第{captcha_cnt}次。')
 
-    # captcha_lck.release()
-    # await captcha_lck.acquire()
-    return validate
+            await asyncio.sleep(1)
+            uuid = loads(await (await get(url="https://pcrd.tencentbot.top/geetest")).content)["uuid"]
+            print(f'uuid={uuid}')
+
+            ccnt = 0
+            while ccnt < 3:
+                ccnt += 1
+                await asyncio.sleep(5)
+                res = await (await get(url=f"https://pcrd.tencentbot.top/check/{uuid}")).content
+                res = loads(res)
+                if "queue_num" in res:
+                    nu = res["queue_num"]
+                    print(f"queue_num={nu}")
+                    tim = min(int(nu), 3) * 5
+                    print(f"sleep={tim}")
+                    await asyncio.sleep(tim)
+                else:
+                    info = res["info"]
+                    if info in ["fail", "url invalid"]:
+                        break
+                    elif info == "in running":
+                        await asyncio.sleep(5)
+                    else:
+                        print(f'info={info}')
+                        validating = False
+                        return info
+        except:
+            pass
+
+    if captcha_cnt >= 5:
+        otto = False
+        await bot.send_private_msg(user_id=acinfo['admin'], message=f'thread{ordd}: 自动过码多次尝试失败，可能为服务器错误，自动切换为手动。\n确实服务器无误后，可发送 validate{ordd} auto重新触发自动过码。')
+        await bot.send_private_msg(user_id=acinfo['admin'], message=f'thread{ordd}: Changed to manual')
 
 
 async def errlogger(msg):
@@ -310,110 +306,115 @@ def make_acinfo(i, **args):
 
 
 async def query(info: str, account=-1, **args):
-    await asyncio.sleep(1)
-    if validating:
-        raise ApiException('账号被风控，请联系管理员输入验证码并重新登录', -1)
+    try:
+        await asyncio.sleep(1)
+        if validating:
+            raise ApiException('账号被风控，请联系管理员输入验证码并重新登录', -1)
 
-    # global last_login, bclient, client
-    # global load_index, home_index
-    async with qlck:
-        # if account != last_login or ("forced_login" in args and args["forced_login"] == True):
-        #    bclient = bsdkclient(make_acinfo(account), captchaVerifier, errlogger)
-        #    client = pcrclient(bclient)
-        #    last_login = account
-        bclient = None
-        if account == -2:
-            bclient = bsdkclient(make_acinfo(account, acc=args["acc"], password=args["password"]), captchaVerifier, errlogger)
-        else:
-            bclient = bsdkclient(make_acinfo(account), captchaVerifier, errlogger)
-        client = pcrclient(bclient)
-        if client.shouldLogin:
-            print(f"farm: try login / account={account}")
-        while client.shouldLogin:
-            await client.login()
-        print(f"farm: login succeed / account={account}")
-        load_index = await client.callapi('/load/index', {'carrier': 'OPPO'})
-        home_index = await client.callapi('/home/index', {'message_id': 1, 'tips_id_list': [], 'is_first': 1, 'gold_history': 0})
-        clan_id = home_index["user_clan"]["clan_id"]
-        current_stamina = load_index["user_info"]["user_stamina"]
-        user_name = load_index["user_info"]["user_name"]
-        current_jewel = load_index["user_jewel"]["free_jewel"] + load_index["user_jewel"]["paid_jewel"]
-        today_donation_num = home_index["user_clan"]["donation_num"]
-
-        if info == "load_index":
-            return load_index
-        if account not in [-1, -2] and ("name" not in acinfo["accounts"][account] or acinfo["accounts"][account]["name"] != user_name):
-            acinfo["accounts"][account]["name"] = user_name
-            save_acinfo()
-        if account not in [-1, -2] and acinfo["accounts"][account]["today_donate"] < today_donation_num:
-            acinfo["accounts"][account]["today_donate"] = today_donation_num
-            save_acinfo()
-
-        item_list = {}
-        for item in load_index["item_list"]:
-            item_list[item["id"]] = item["stock"]
-        current_ticket = 0
-        try:
-            current_ticket = item_list[23001]
-        except:
-            pass
-
-        user_equip = {}
-        for item in load_index["user_equip"]:
-            user_equip[item["id"]] = item["stock"]
-
-        if info == "profile":
-            return (await profile(client, args["pcrid"]))['user_info']
-        if info == "invite":
-            return await invite(client, args["pcrid"])
-        if info == "remove":
-            return await remove(client, clan_id, args["pcrid"])
-        if info == "accept":
-            return await accept(client, clan_id)
-        if info == "room":
-            return await room(client)
-        if info == "mission":
-            return await mission(client)
-        if info == "present":
-            return await present(client)
-        if info == "get_donate_list":
-            return await get_donate_list(client, clan_id)
-        if info == "server_time":
-            return load_index["user_info"]["last_ac_time"]
-        if info == "donate":
-            if "equip_id" in args:
-                equip_id = int(args["equip_id"])
-                return await donate(client, clan_id, args["message_id"], args["donation_num"], user_equip[equip_id])
-            elif "current_equip_num" in args:
-                return await donate(client, clan_id, args["message_id"], args["donation_num"], args["current_equip_num"])
-            return False
-        if info == "get_equip":
-            equip_id = args["equip_id"]
-            if type(equip_id) == str:
-                quest_id = equip_id.split('-')
-                quest_id = int(f"11{int(quest_id[0]):03d}{int(quest_id[1]):03d}")
-                for i in home_index["quest_list"]:
-                    if i["quest_id"] == quest_id:
-                        if i["clear_flg"] == 3:
-                            return await get_equip(client, equip_id, current_jewel, current_stamina, current_ticket)
-                        else:
-                            return f"关卡{equip_id}为{i['clear_flg']}星通关，无法扫荡。"
-                return f"该农场号未解锁关卡{equip_id}"
-            elif str(equip_id) in equip2list:
-                equip_map_list = equip2list[str(equip_id)]
-                msg = f"包含{equip_id}的图有：" + " ".join(equip_map_list)
-                for equip_map in equip_map_list:
-                    msg += f"\n尝试自动刷取{equip_map}："
-                    res = await query("get_equip", account, equip_id=equip_map)
-                    if res == True:
-                        return True
-                    if type(res) == str:
-                        msg += f"Failed {res}"
-                    else:
-                        msg += "Failed"
-                return msg
+        # global last_login, bclient, client
+        # global load_index, home_index
+        async with qlck:
+            # if account != last_login or ("forced_login" in args and args["forced_login"] == True):
+            #    bclient = bsdkclient(make_acinfo(account), captchaVerifier, errlogger)
+            #    client = pcrclient(bclient)
+            #    last_login = account
+            bclient = None
+            if account == -2:
+                bclient = bsdkclient(make_acinfo(account, acc=args["acc"], password=args["password"]), captchaVerifier, errlogger)
             else:
-                return "未找到该装备"
+                bclient = bsdkclient(make_acinfo(account), captchaVerifier, errlogger)
+            client = pcrclient(bclient)
+            if client.shouldLogin:
+                print(f"farm: try login / account={account}")
+            while client.shouldLogin:
+                await client.login()
+            print(f"farm: login succeed / account={account}")
+            load_index = await client.callapi('/load/index', {'carrier': 'OPPO'})
+            home_index = await client.callapi('/home/index', {'message_id': 1, 'tips_id_list': [], 'is_first': 1, 'gold_history': 0})
+            clan_id = home_index["user_clan"]["clan_id"]
+            current_stamina = load_index["user_info"]["user_stamina"]
+            user_name = load_index["user_info"]["user_name"]
+            current_jewel = load_index["user_jewel"]["free_jewel"] + load_index["user_jewel"]["paid_jewel"]
+            today_donation_num = home_index["user_clan"]["donation_num"]
+            global captcha_cnt
+            captcha_cnt = 0
+            if info == "load_index":
+                return load_index
+            if account not in [-1, -2] and ("name" not in acinfo["accounts"][account] or acinfo["accounts"][account]["name"] != user_name):
+                acinfo["accounts"][account]["name"] = user_name
+                save_acinfo()
+            if account not in [-1, -2] and acinfo["accounts"][account]["today_donate"] < today_donation_num:
+                acinfo["accounts"][account]["today_donate"] = today_donation_num
+                save_acinfo()
+
+            item_list = {}
+            for item in load_index["item_list"]:
+                item_list[item["id"]] = item["stock"]
+            current_ticket = 0
+            try:
+                current_ticket = item_list[23001]
+            except:
+                pass
+
+            user_equip = {}
+            for item in load_index["user_equip"]:
+                user_equip[item["id"]] = item["stock"]
+
+            if info == "profile":
+                return (await profile(client, args["pcrid"]))['user_info']
+            if info == "invite":
+                return await invite(client, args["pcrid"])
+            if info == "remove":
+                return await remove(client, clan_id, args["pcrid"])
+            if info == "accept":
+                return await accept(client, clan_id)
+            if info == "room":
+                return await room(client)
+            if info == "mission":
+                return await mission(client)
+            if info == "present":
+                return await present(client)
+            if info == "get_donate_list":
+                return await get_donate_list(client, clan_id)
+            if info == "server_time":
+                return load_index["user_info"]["last_ac_time"]
+            if info == "donate":
+                if "equip_id" in args:
+                    equip_id = int(args["equip_id"])
+                    return await donate(client, clan_id, args["message_id"], args["donation_num"], user_equip[equip_id])
+                elif "current_equip_num" in args:
+                    return await donate(client, clan_id, args["message_id"], args["donation_num"], args["current_equip_num"])
+                return False
+            if info == "get_equip":
+                equip_id = args["equip_id"]
+                if type(equip_id) == str:
+                    quest_id = equip_id.split('-')
+                    quest_id = int(f"11{int(quest_id[0]):03d}{int(quest_id[1]):03d}")
+                    for i in home_index["quest_list"]:
+                        if i["quest_id"] == quest_id:
+                            if i["clear_flg"] == 3:
+                                return await get_equip(client, equip_id, current_jewel, current_stamina, current_ticket)
+                            else:
+                                return f"关卡{equip_id}为{i['clear_flg']}星通关，无法扫荡。"
+                    return f"该农场号未解锁关卡{equip_id}"
+                elif str(equip_id) in equip2list:
+                    equip_map_list = equip2list[str(equip_id)]
+                    msg = f"包含{equip_id}的图有：" + " ".join(equip_map_list)
+                    for equip_map in equip_map_list:
+                        msg += f"\n尝试自动刷取{equip_map}："
+                        res = await query("get_equip", account, equip_id=equip_map)
+                        if res == True:
+                            return True
+                        if type(res) == str:
+                            msg += f"Failed {res}"
+                        else:
+                            msg += "Failed"
+                    return msg
+                else:
+                    return "未找到该装备"
+    except Exception as e:
+        print(repr(e))
+        return repr(e)
 
 
 ff_last = False
@@ -528,9 +529,9 @@ async def on_farm_schedule(*args):
                             binds_accept_pcrid[str(equip['viewer_id'])] -= donation_num
                         save_binds()
                         if donation_num + equip["donation_num"] == equip["request_num"]:
-                            await bot.send_private_msg(user_id=int(binds[str(equip['viewer_id'])]["qqid"]),
-                                                       message=f"您的捐赠请求已完成！\n参与的{bot_name}有：" + " ".join(binds[str(equip['viewer_id'])]['donate_bot']) +
-                                                       ("" if free else f"\n您的剩余捐赠额度为：{binds_accept_pcrid[str(equip['viewer_id'])]}"))
+                            msgg = f"您的捐赠请求已完成！\n参与的{bot_name}有：" + " ".join(binds[str(
+                                equip['viewer_id'])]['donate_bot']) + ("" if free else f"\n您的剩余捐赠额度为：{binds_accept_pcrid[str(equip['viewer_id'])]}")
+                            await bot.send_private_msg(user_id=int(binds[str(equip['viewer_id'])]["qqid"]), message=msgg)
                             binds[str(equip['viewer_id'])]["donate_remind"] = False
                             binds[str(equip['viewer_id'])]["donate_num"] = 0
                             binds[str(equip['viewer_id'])]["donate_bot"] = []
@@ -572,14 +573,16 @@ async def on_dayend(*args):  # 每天晚上23点领家园体、任务奖励、�
     msg = []
     retmsg = []
     for i, account in enumerate(acinfo["accounts"]):
+
         res1 = await query("room", i)
         res2 = await query("mission", i)
         res3 = await query("present", i)
         if res1 == True and res2 == True and res3 == True:
             pass
         else:
-            msg.append(f"{account['name']}\n家园：{res1}\n任务：{res2}\n礼物：{res3}\n")
+            msg.append(f"{account['name']} 家园：{res1} 任务：{res2} 礼物：{res3}\n")
         retmsg.append(await brush(bot, i, "12-7", 1))
+
         if len(retmsg) > 5:
             await bot.send_private_msg(user_id=acinfo["admin"], message='\n'.join(retmsg))
             retmsg = []
@@ -589,6 +592,13 @@ async def on_dayend(*args):  # 每天晚上23点领家园体、任务奖励、�
         await bot.send_private_msg(user_id=acinfo["admin"], message="以下农场号领取家园体、任务奖励、礼物箱出现报错：\n" + "\n".join(msg))
     else:
         await bot.send_private_msg(user_id=acinfo["admin"], message="所有农场号领取家园体、任务奖励、礼物箱成功")
+
+
+@sv.on_fullmatch(("清日常"))
+async def 做日常(bot, ev):
+    if str(ev.user_id) != str(acinfo["admin"]):
+        return
+    await on_dayend()
 
 
 async def brush(bot, i, equip_id, ret=0):
