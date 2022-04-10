@@ -3,7 +3,7 @@ import requests
 import json
 import time
 import hashlib
-from . import rsacr
+from . import errlogger, rsacr
 import urllib
 from hoshino.aiorequests import post, get
 
@@ -94,7 +94,11 @@ async def login(bili_account, bili_pwd, make_captch):
         login_sta = await login2(bili_account, bili_pwd, cap["challenge"], cap['gt_user_id'], captch_done)
         return login_sta
 
-    cap = await make_captch(True)
-    login_sta = await login2(bili_account, bili_pwd, cap["challenge"], cap['gt_user_id'], cap['validate'])
-    print(f'login_sta={login_sta}')
-    return login_sta
+    while True:
+        cap = await make_captch(True, True)
+        login_sta = await login2(bili_account, bili_pwd, cap["challenge"], cap['gt_user_id'], cap['validate'])
+        if "access_key" in login_sta:
+            await make_captch(0)
+            return login_sta
+        else:
+            errlogger(f'{login_sta}')

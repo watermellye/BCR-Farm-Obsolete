@@ -110,6 +110,11 @@ async def captchaVerifier(*args):
     global otto
     if len(args) == 0:
         return otto
+    global captcha_cnt
+    if len(args) == 1 and type(args[0]) == int:
+        captcha_cnt = args[0]
+        return captcha_cnt
+
     global acfirst, validating
     global binds, lck, validate, captcha_lck
     if not acfirst:
@@ -129,7 +134,6 @@ async def captchaVerifier(*args):
         validating = False
         return validate
 
-    global captcha_cnt
     while captcha_cnt < 5:
         captcha_cnt += 1
         try:
@@ -336,8 +340,6 @@ async def query(info: str, account=-1, **args):
             user_name = load_index["user_info"]["user_name"]
             current_jewel = load_index["user_jewel"]["free_jewel"] + load_index["user_jewel"]["paid_jewel"]
             today_donation_num = home_index["user_clan"]["donation_num"]
-            global captcha_cnt
-            captcha_cnt = 0
             if info == "load_index":
                 return load_index
             if account not in [-1, -2] and ("name" not in acinfo["accounts"][account] or acinfo["accounts"][account]["name"] != user_name):
