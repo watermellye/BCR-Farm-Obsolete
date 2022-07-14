@@ -81,6 +81,8 @@ class bsdkclient:
                 await self.errlogger("geetest or captcha succeed")
                 break
             await self.errlogger(resp['message'])
+            if str(resp['message']) == "用户名或密码错误":
+                raise Exception("用户名或密码错误")
 
         return resp['uid'], resp['access_key']
 
@@ -146,21 +148,27 @@ class pcrclient:
 
         try:
             if self.viewer_id is not None:
-                request['viewer_id'] = b64encode(pcrclient.encrypt(str(self.viewer_id), key)) if crypted else str(self.viewer_id)
+                request['viewer_id'] = b64encode(pcrclient.encrypt(
+                    str(self.viewer_id), key)) if crypted else str(self.viewer_id)
 
             response = await (await post(apiroot + apiurl, data=pcrclient.pack(request, key) if crypted else str(request).encode('utf8'), headers=self.headers, timeout=10)).content
 
-            response = pcrclient.unpack(response)[0] if crypted else loads(response)
+            response = pcrclient.unpack(
+                response)[0] if crypted else loads(response)
 
             data_headers = response['data_headers']
             if "/check/game_start" == apiurl and "store_url" in data_headers:
                 global version
                 version = data_headers["store_url"].split('_')[1][:-2]
+                import re
+                pattern = re.compile(r"\d\.\d\.\d")
+                version = pattern.findall(version)[0]
+
                 defaultHeaders['APP-VER'] = version
                 with open(config, "w", encoding='utf-8') as fp:
                     print(version, file=fp)
 
-            #print(f"data_headers\ntype={type(data_headers)}\n{data_headers}")
+            # print(f"data_headers\ntype={type(data_headers)}\n{data_headers}")
 
             if 'sid' in data_headers and data_headers["sid"] != '':
                 t = md5()
@@ -177,10 +185,12 @@ class pcrclient:
 
             if debugging:
                 curpath = dirname(__file__)
-                curpath = join(curpath, f"debug/{apiurl.replace('/', '-')}.json")
-                #print(curpath)
-                debug_info = {"apiurl": apiurl, "request": request, "headers": data_headers}
-                #print(debug_info)
+                curpath = join(
+                    curpath, f"debug/{apiurl.replace('/', '-')}.json")
+                # print(curpath)
+                debug_info = {"apiurl": apiurl,
+                              "request": request, "headers": data_headers}
+                # print(debug_info)
                 debug_info["data"] = data
                 try:
                     with open(curpath, "w", encoding="utf-8") as fp:
@@ -214,7 +224,8 @@ class pcrclient:
                 break
 
             try:
-                match = search('\d\d\d\d-\d\d-\d\d \d\d:\d\d:\d\d', manifest['maintenance_message']).group()
+                match = search('\d\d\d\d-\d\d-\d\d \d\d:\d\d:\d\d',
+                               manifest['maintenance_message']).group()
                 end = parse(match)
                 print(f'server is in maintenance until {match}')
                 while datetime.now() < end:
