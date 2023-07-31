@@ -1,3 +1,9 @@
+**本仓库已过时。请移步至[此仓库](https://github.com/watermellye/AutoPCR_Archived)。**
+
+**装备农场涉及其中的`autopcr_db`, `farm`, `query`文件夹。您可忽略`priconne`文件夹。**
+
+————以下为原Readme————
+
 # b服pcr AutoFarm
 ellye、伊蕾娜、路路联合开发。女生自用。与pcr的通信基于pcrjjc2。
 
